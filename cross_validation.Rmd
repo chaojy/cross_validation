@@ -113,3 +113,92 @@ rmse(wiggly_mod, test_df)
 #next step is to reiterate a bunch of times
 ```
 
+## cross validation using `modelr`
+
+```{r}
+cv_df = 
+  crossv_mc(nonlin_df, 100)
+#cross validation 100 times
+```
+
+What is happening here...?
+
+```{r}
+cv_df %>% pull(train)
+
+cv_df %>% pull(train) %>%  .[[1]] %>%  as_tibble()
+cv_df %>% pull(test) %>%  .[[1]] %>%  as_tibble()
+#you can have these as dataframes
+```
+
+```{r}
+cv_df =
+  cv_df %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble)
+  )
+```
+
+
+Let's try to fit models and get RMSEs for them.
+
+```{r}
+cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(y ~ x, data = .x))
+  )
+
+cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(y ~ x, data = .x))
+  ) %>% pull(linear_mod)
+
+cv_df = 
+cv_df %>% 
+  mutate(
+    linear_mod = map(.x = train, ~lm(y ~ x, data = .x)),
+    smooth_mod = map(.x = train, ~gam(y ~ s(x), data = .x)),
+    wiggly_mod = map(.x = train, ~gam(y ~ s(x, k = 30), sp = 10e-6, data = .x))
+  ) %>% 
+  mutate(
+    rmse_linear = map2_dbl(.x = linear_mod, .y = test, ~rmse(model = .x, data = .y)),
+#.x is obtaining RMSE for "linear_mod" - unclear what .y is doing
+    rmse_smooth = map2_dbl(.x = smooth_mod, .y = test, ~rmse(model = .x, data = .y)),
+    rmse_wiggly = map2_dbl(.x = wiggly_mod, .y = test, ~rmse(model = .x, data = .y))
+)
+```
+
+What do these results say about the model choices?
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+#100 cross validation training testing splits and 3 models fit to each of those splits
+  ggplot(aes(x = model,, y = rmse)) +
+  geom_violin()
+#This tells us linear rmse always is higher so it does worse.  Smooth and wiggly better, there is some overlap between them, but smooth is generally better than wiggly.  Smooth model is doing the best.
+```
+
+Compute average...
+
+```{r}
+cv_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  group_by(model) %>% 
+  summarize(avg_rmse = mean(rmse))
+
+```
+
